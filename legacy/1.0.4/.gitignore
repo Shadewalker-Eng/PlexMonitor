@@ -1,0 +1,7 @@
+.test-bin/
+work/
+*.log
+settings.xml
+now-playing-token.bin
+DashboardProfile/
+.vs/

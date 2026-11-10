@@ -1,7 +1,12 @@
+**/bin/
+**/obj/
+artifacts/
+verification/
 .test-bin/
-work/
+.vs/
+*.user
 *.log
+*.trace
 settings.xml
 now-playing-token.bin
 DashboardProfile/
-.vs/
