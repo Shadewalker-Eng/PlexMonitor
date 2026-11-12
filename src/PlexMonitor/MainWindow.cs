@@ -22,15 +22,16 @@ public sealed class MainWindow : Window
 {
     static readonly Color Gold = Color.FromArgb(255, 229, 160, 13), Muted = Color.FromArgb(255, 170, 170, 170);
     readonly PlexService plex;
-    readonly Grid root = new(), columns = new();
-    readonly StackPanel sidebar = new() { Spacing = 16 }, activity = new() { Spacing = 16 }, streams = new() { Spacing = 14 }, log = new() { Spacing = 5 };
-    readonly ScrollViewer serverScroll = new(), activityScroll = new();
+    readonly Grid root = new();
+    readonly StackPanel body = new() { Spacing = 16 };
+    readonly StackPanel activity = new() { Spacing = 16 }, streams = new() { Spacing = 14 }, log = new() { Spacing = 5 };
+    readonly Grid header = new() { ColumnSpacing = 16 };
+    Border statusCard = null!, bandwidthCard = null!;
     readonly TextBlock serverName = Text("Detecting server…", 18, true), state = Text("Checking…", 23, true), detail = Text("", 13), summary = Text("Connecting to Plex…", 14);
     readonly TextBlock bandwidthTotal = Text("— Mbps", 28, true), bandwidthSplit = Text("Local —   ·   Remote —", 13), bandwidthNote = Text("Waiting for Plex samples…", 12), updated = Text("Updates every 5 seconds", 12);
     readonly TextBox executable = new() { Header = "Server executable", HorizontalAlignment = HorizontalAlignment.Stretch }, service = new() { Header = "Windows service name (optional)", PlaceholderText = "Leave blank for the Plex desktop app" };
     readonly ToggleSwitch recovery = new() { Header = "Automatic recovery", OnContent = "Start Plex when stopped", OffContent = "Monitor only" };
     readonly Button save = Button("Save settings", true), start = Button("Start Plex"), check = Button("Check status"), refresh = Button("Refresh"), connection = Button("Connection");
-    readonly ComboBox compactNav = new() { Items = { "Live activity", "Server & settings" }, SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
     readonly Canvas graph = new() { Height = 76, HorizontalAlignment = HorizontalAlignment.Stretch, Clip = new RectangleGeometry() };
     readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(5) };
     readonly Forms.NotifyIcon tray;
@@ -57,14 +58,17 @@ public sealed class MainWindow : Window
         root.Background = Brush(21); root.RequestedTheme = ElementTheme.Dark;
         root.RowDefinitions.Add(new() { Height = GridLength.Auto }); root.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
         root.Children.Add(titleBar);
-        var body = new Grid { Margin = new Thickness(24), RowSpacing = 14 };
-        body.RowDefinitions.Add(new() { Height = GridLength.Auto }); body.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
-        body.Children.Add(compactNav); Grid.SetRow(columns, 1); body.Children.Add(columns); Grid.SetRow(body, 1); root.Children.Add(body);
-        columns.ColumnSpacing = 24; columns.ColumnDefinitions.Add(new() { Width = new GridLength(370) }); columns.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-        ConfigureScroll(serverScroll, sidebar); ConfigureScroll(activityScroll, activity); columns.Children.Add(serverScroll); Grid.SetColumn(activityScroll, 1); columns.Children.Add(activityScroll);
+        var scroll = new ScrollViewer { Margin = new Thickness(24) };
+        ConfigureScroll(scroll, body);
+        Grid.SetRow(scroll, 1);
+        root.Children.Add(scroll);
         Content = root;
-        BuildSidebar(); BuildActivity();
-        root.SizeChanged += (_, _) => ResizeLayout(); compactNav.SelectionChanged += (_, _) => ResizeLayout(); ResizeLayout();
+        header.ColumnDefinitions.Add(new());
+        header.ColumnDefinitions.Add(new());
+        body.Children.Add(header);
+        BuildStatus();
+        BuildActivity();
+        body.Children.Add(activity);
         graph.SizeChanged += (_, _) => DrawGraph();
         using (var source = new System.Drawing.Icon(Path.Combine(AppContext.BaseDirectory, "Assets", "PlexMonitor.ico"), 16, 16)) trayIcon = (System.Drawing.Icon)source.Clone();
         var menu = new Forms.ContextMenuStrip(); menu.Items.Add("Show PlexMonitor", null, (_, _) => DispatcherQueue.TryEnqueue(Show)); menu.Items.Add("Exit monitor", null, (_, _) => DispatcherQueue.TryEnqueue(ExitMonitor));
@@ -78,12 +82,32 @@ public sealed class MainWindow : Window
         DispatcherQueue.TryEnqueue(async () => await Poll(true));
     }
 
-    void BuildSidebar()
+    void BuildStatus()
     {
-        var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
-        var plexText = Text("plex", 32, true); plexText.Foreground = new SolidColorBrush(Gold); brand.Children.Add(plexText); var name = Text("MONITOR", 13, true); name.VerticalAlignment = VerticalAlignment.Center; brand.Children.Add(name); sidebar.Children.Add(brand);
-        sidebar.Children.Add(Caption("YOUR SERVER. ALWAYS READY."));
-        var statusPanel = Stack(Caption("SYSTEM STATUS"), serverName, state, detail); sidebar.Children.Add(Card(statusPanel));
+        var statusDetails = Stack(state, detail);
+        var statusRow = new Grid { ColumnSpacing = 24, RowSpacing = 10 };
+        statusRow.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
+        statusRow.ColumnDefinitions.Add(new() { Width = new GridLength(2, GridUnitType.Star) });
+        statusRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        for (int row = 0; row < 3; row++) statusRow.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        statusRow.Children.Add(serverName);
+        statusRow.Children.Add(statusDetails);
+        statusRow.Children.Add(check);
+        Grid.SetColumn(statusDetails, 1);
+        Grid.SetColumn(check, 2);
+        statusRow.SizeChanged += (_, args) =>
+        {
+            bool narrow = args.NewSize.Width < 560;
+            Grid.SetColumn(statusDetails, narrow ? 0 : 1);
+            Grid.SetRow(statusDetails, narrow ? 1 : 0);
+            Grid.SetColumn(check, narrow ? 0 : 2);
+            Grid.SetRow(check, narrow ? 2 : 0);
+            Grid.SetColumnSpan(serverName, narrow ? 3 : 1);
+            Grid.SetColumnSpan(statusDetails, narrow ? 3 : 1);
+            Grid.SetColumnSpan(check, narrow ? 3 : 1);
+        };
+        statusCard = Card(Stack(Caption("SYSTEM STATUS"), statusRow));
+        header.Children.Add(statusCard);
         executable.Text = plex.Settings.Executable; service.Text = plex.Settings.ServiceName; recovery.IsOn = plex.Settings.AutoRecover;
         var browse = Button("Browse…"); browse.HorizontalAlignment = HorizontalAlignment.Left;
         browse.Click += async (_, _) =>
@@ -93,9 +117,14 @@ public sealed class MainWindow : Window
             var file = await picker.PickSingleFileAsync(); if (file != null) executable.Text = file.Path;
         };
         var buttons = new Grid { ColumnSpacing = 10 }; buttons.ColumnDefinitions.Add(new()); buttons.ColumnDefinitions.Add(new()); buttons.Children.Add(save); Grid.SetColumn(start, 1); buttons.Children.Add(start);
-        var settings = Stack(Caption("MONITOR SETTINGS"), executable, browse, service, recovery, buttons); sidebar.Children.Add(Card(settings));
-        check.HorizontalAlignment = HorizontalAlignment.Stretch; sidebar.Children.Add(check);
-        sidebar.Children.Add(Card(Stack(Caption("RECENT ACTIVITY"), log))); sidebar.Children.Add(Caption("15s status checks · Runs in your system tray"));
+        var settings = Stack(executable, browse, service, recovery, buttons, Caption("RECENT ACTIVITY"), log);
+        body.Children.Add(new Expander
+        {
+            Header = "Monitor settings",
+            Content = settings,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch
+        });
     }
 
     void BuildActivity()
@@ -104,27 +133,30 @@ public sealed class MainWindow : Window
         activity.Children.Add(Text("Now Playing", 32, true)); activity.Children.Add(summary);
         var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 }; tools.Children.Add(refresh); tools.Children.Add(connection); activity.Children.Add(tools); activity.Children.Add(updated);
         bandwidthTotal.Foreground = new SolidColorBrush(Gold);
-        activity.Children.Add(Card(Stack(Caption("PLEX BANDWIDTH"), bandwidthTotal, bandwidthSplit, graph, bandwidthNote)));
+        bandwidthCard = Card(Stack(Caption("PLEX BANDWIDTH"), bandwidthTotal, bandwidthSplit, graph, bandwidthNote));
+        Grid.SetColumn(bandwidthCard, 1);
+        header.Children.Add(bandwidthCard);
         activity.Children.Add(streams);
-    }
-
-    void ResizeLayout()
-    {
-        bool compact = root.ActualWidth < 960;
-        compactNav.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
-        serverScroll.Visibility = compact && compactNav.SelectedIndex == 0 ? Visibility.Collapsed : Visibility.Visible;
-        activityScroll.Visibility = compact && compactNav.SelectedIndex == 1 ? Visibility.Collapsed : Visibility.Visible;
-        columns.ColumnSpacing = compact ? 0 : 24;
-        columns.ColumnDefinitions[0].Width = compact ? new GridLength(1, GridUnitType.Star) : new GridLength(Math.Clamp(root.ActualWidth * .30, 330, 420));
-        columns.ColumnDefinitions[1].Width = compact ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
-        Grid.SetColumn(activityScroll, compact ? 0 : 1);
     }
 
     void Show() { AppWindow.Show(); Activate(); }
     void ExitMonitor() { quitting = true; Close(); }
     internal FrameworkElement VerificationRoot => root;
     internal async Task VerifyRefresh() { while(polling) await Task.Delay(25); await Poll(true); }
-    internal void VerifySection(int index) { compactNav.SelectedIndex = index; ResizeLayout(); }
+    internal void VerifyLayout()
+    {
+        Point status = statusCard.TransformToVisual(body).TransformPoint(new Point(0, 0));
+        Point bandwidth = bandwidthCard.TransformToVisual(body).TransformPoint(new Point(0, 0));
+        double activityTop = activity.TransformToVisual(body).TransformPoint(new Point(0, 0)).Y;
+        if (statusCard.ActualWidth <= 0 || statusCard.ActualHeight <= 0 || bandwidthCard.ActualHeight <= 0 ||
+            Math.Abs(status.Y - bandwidth.Y) > 1 ||
+            Math.Abs(statusCard.ActualWidth - bandwidthCard.ActualWidth) > 1 ||
+            Math.Abs(bandwidth.X - status.X - statusCard.ActualWidth - header.ColumnSpacing) > 1 ||
+            Math.Abs(statusCard.ActualWidth + bandwidthCard.ActualWidth + header.ColumnSpacing - body.ActualWidth) > 1 ||
+            activityTop < Math.Max(status.Y + statusCard.ActualHeight, bandwidth.Y + bandwidthCard.ActualHeight) ||
+            Math.Abs(activity.ActualWidth - body.ActualWidth) > 1)
+            throw new InvalidOperationException("The header must split evenly above full-width Live Activity.");
+    }
     internal void VerifyQuit() => ExitMonitor();
     internal string VerifyState() => serverName.Text + "|" + summary.Text + "|" + bandwidthTotal.Text;
     void AddLog(string message) { log.Children.Insert(0, Caption(DateTime.Now.ToString("T") + "  " + message)); while (log.Children.Count > 5) log.Children.RemoveAt(log.Children.Count - 1); plex.Log(message); }

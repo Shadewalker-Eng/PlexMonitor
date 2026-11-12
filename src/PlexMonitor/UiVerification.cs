@@ -29,11 +29,13 @@ internal static class UiVerification
             await window.VerifyRefresh(); await Task.Delay(400);
             string state=window.VerifyState();
             if(!state.Contains("Cinema & Music") || !state.Contains("2 active streams") || state.Contains("— Mbps")) throw new Exception("Expected sample telemetry did not reach the WinUI controls: "+state);
-            await Capture(window,"WinUI-wide.png");
-            window.AppWindow.Resize(new Windows.Graphics.SizeInt32(820,700)); await Task.Delay(400);
-            window.VerifySection(0); await Task.Delay(100); await Capture(window,"WinUI-compact-activity.png");
-            window.VerifySection(1); await Task.Delay(100); await Capture(window,"WinUI-compact-settings.png");
-            File.WriteAllText(Path.Combine(Folder,"result.txt"),"PASS: WinUI 3 app launched, sample sessions/name/bandwidth rendered, wide and compact native layouts captured.");
+            window.VerifyLayout();
+            await Capture(window,"PlexMonitor-wide.png");
+            window.AppWindow.Resize(new Windows.Graphics.SizeInt32(540, 700));
+            await Task.Delay(400);
+            window.VerifyLayout();
+            await Capture(window,"PlexMonitor-compact.png");
+            File.WriteAllText(Path.Combine(Folder,"result.txt"),"PASS: Sample telemetry rendered and both layouts split the header evenly above full-width Live Activity.");
         }
         catch(Exception e) {File.WriteAllText(Path.Combine(Folder,"result.txt"),"FAIL: "+e);}
         finally {window.VerifyQuit();}
